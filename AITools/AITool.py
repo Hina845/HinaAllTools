@@ -25,6 +25,23 @@ SWP_NOACTIVATE = 0x0010
 width, height = 400, 300
 root.geometry(f'{width}x{height}+{screen_width - width - 10}+{screen_height - height - 50}')
 
+_offset_x = 0
+_offset_y = 0
+
+def on_mouse_press(event):
+    global _offset_x, _offset_y
+    _offset_x = event.x
+    _offset_y = event.y
+
+def on_mouse_motion(event):
+    global _offset_x, _offset_y
+    x = root.winfo_pointerx() - _offset_x
+    y = root.winfo_pointery() - _offset_y
+    root.geometry(f'+{x}+{y}')
+
+root.bind('<ButtonPress-1>', on_mouse_press)
+root.bind('<B1-Motion>', on_mouse_motion)
+
 root.attributes('-alpha', 0.05)
 
 frame = tk.Frame(root, bg="black")

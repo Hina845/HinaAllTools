@@ -18,11 +18,48 @@ class GeminiClient:
         with open(key_file_path, "r") as key_file:
             self.api_key = key_file.read().strip()
         self.base_url = "http://34.27.143.218:5678/webhook/fb35697c-dbb0-4897-b4a4-e0c10bc2c58f"
+        self.legacy_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    
+    async def get_response_legacy(self, prompt = None, image = None) -> str:
+        api_parts = []
+
+        if prompt:
+            api_parts.append({"text": prompt})
+
+        if image:
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='PNG')
+            img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+            with open("screenshot.txt", 'a') as f:
+                f.write(f"{img_base64}\n")
+            api_parts.append({
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": img_base64
+                }
+            })
+            if not prompt:
+                api_parts.insert(0, {"text": "Chọn đáp án đúng nhất ở câu hỏi trong ảnh."})
+
+        if not api_parts:
+            return "Error: No content (prompt or image) to send to API."
+                
+        payload = {
+            "contents": [{"parts": api_parts}]
+        }
+        
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, 
+                lambda: self._make_api_call_legacy(payload)
+            )
+            return result
+        except Exception as e:
+            return f"Error: {str(e)}"
     
     async def get_response(self, prompt: str, image: Optional[Image.Image] = None) -> str:
         api_parts = []
-
-        # Add text part if prompt is provided
 
         data = {}
         files = {}
@@ -33,6 +70,9 @@ class GeminiClient:
         if image:
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='PNG')
+            with open("screenshot.txt", 'a') as f:
+                img_base64 = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+                f.write(f"{img_base64}\n")
             img_byte_arr.seek(0)  # Reset the stream position to the beginning
             files = {
                 'image': ('image.png', img_byte_arr, 'image/png')
@@ -54,6 +94,19 @@ class GeminiClient:
             return result
         except Exception as e:
             raise e
+            return f"Error: {str(e)}"
+
+    def _make_api_call_legacy(self, payload):
+        try:
+            response = requests.post(
+                self.legacy_url, 
+                params={"key": self.api_key}, 
+                json=payload
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "No response received.")
+        except requests.exceptions.RequestException as e:
             return f"Error: {str(e)}"
     
     def _make_api_call(self, data, files):
@@ -83,7 +136,7 @@ class ScreenshotManager:
         self.root = root
         self.screenshot = None
         self.callback = callback
-    
+
     def capture_screenshot(self):
         """Start the screenshot capture process"""
         self.root.withdraw()  # Hide main window
@@ -150,37 +203,27 @@ class HinaAITool:
     """Main application class for AI tool"""
     
     def __init__(self):
-        # Initialize system settings
         user32 = ctypes.windll.user32
         self.screen_width = user32.GetSystemMetrics(0)
         self.screen_height = user32.GetSystemMetrics(1)
         
-        # Create components
         self.api_client = GeminiClient()
         self.event_loop = None
         
-        # Create main window
         self.root = tk.Tk()
         self.root.title("HinaAITool")
         self.root.attributes('-topmost', True)
         self.root.overrideredirect(True)
-        
-        # Window dimensions
+    
         self.width, self.height = 400, 300
         self.root.geometry(f'{self.width}x{self.height}+{self.screen_width - self.width - 10}+{self.screen_height - self.height - 50}')
-        
-        # Window dragging
         self._offset_x = 0
         self._offset_y = 0
-        
-        # Initialize sub-components
         self.screenshot_manager = ScreenshotManager(self.root, self.display_screenshot)
-        
-        # Set up the UI
         self.setup_ui()
-        
-        # Start asyncio event loop in a separate thread
         self.setup_asyncio_thread()
+
+        self.legacy_mode = False
     
     def setup_asyncio_thread(self):
         """Set up a separate thread for the asyncio event loop"""
@@ -213,6 +256,12 @@ class HinaAITool:
         self.chat_area.pack(side="left", fill="both", expand=True)
         self.scrollbar.config(command=self.chat_area.yview)
         
+        # Legacy mode toggle button
+        self.legacy_button = tk.Button(
+            self.frame, text="Legacy Mode: OFF", bg="#FFC107", fg="black",
+            command=self.toggle_legacy_mode, font=("Arial", 8)
+        )
+        self.legacy_button.pack(side="right", pady=(5, 0))
         # Input area
         self.input_frame = tk.Frame(self.frame, bg="black")
         self.input_frame.pack(fill="x", side="bottom", padx=5, pady=(2, 5))
@@ -252,6 +301,12 @@ class HinaAITool:
         # Window transparency and event bindings
         self.root.attributes('-alpha', 0.01)
         self.bind_events()
+
+    def toggle_legacy_mode(self):
+        self.legacy_mode  = not self.legacy_mode
+        self.legacy_button.config(
+            text=f"Legacy Mode: {'ON' if self.legacy_mode else 'OFF'}",
+        )
     
     def bind_events(self):
         """Bind UI events"""
@@ -274,7 +329,7 @@ class HinaAITool:
     
     def on_enter(self, event):
         """Handle mouse enter - make window more visible"""
-        self.root.attributes('-alpha', 0.5)
+        self.root.attributes('-alpha', 0.4)
     
     def on_leave(self, event):
         """Handle mouse leave - make window more transparent"""
@@ -311,7 +366,8 @@ class HinaAITool:
     
     async def get_and_display_response(self, message, image):
         """Get response from API and display it"""
-        response = await self.api_client.get_response(message, image)
+        if not self.legacy_mode: response = await self.api_client.get_response(message, image)
+        else: response = await self.api_client.get_response_legacy(message, image)
         
         # Use after to update UI from main thread
         self.root.after(0, lambda: self.add_to_chat(f"{response}\n\n"))

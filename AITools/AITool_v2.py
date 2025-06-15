@@ -130,7 +130,7 @@ class GeminiClient:
                 )
             response.raise_for_status()
             data = response.json()
-            return f'{data["response"]}\n{data["output"]}'
+            return f'{data["output"]}'
         except requests.exceptions.RequestException as e:
             return f"Error: {str(e)}"
 

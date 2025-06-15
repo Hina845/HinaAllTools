@@ -1,5 +1,5 @@
 import tkinter as tk
-import asyncio
+import asyncio, sys
 import threading
 import requests
 import ctypes
@@ -9,12 +9,18 @@ import io
 import base64
 from typing import Optional
 
+def get_config_path(filename):
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(__file__)
+    return os.path.join(base_path, filename)
+
 class GeminiClient:
     """Handles communication with Gemini API"""
     
     def __init__(self):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        key_file_path = os.path.join(script_dir, "key.txt")
+        key_file_path = get_config_path("key.txt")
         with open(key_file_path, "r") as key_file:
             self.api_key = key_file.read().strip()
         self.base_url = "http://34.27.143.218:5678/webhook/fb35697c-dbb0-4897-b4a4-e0c10bc2c58f"
